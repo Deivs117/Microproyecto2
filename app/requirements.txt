@@ -1,5 +1,5 @@
 flask
-mxnet
+mxnet==1.9.1
 gluoncv
 Pillow
-numpy
+numpy==1.23.5

@@ -14,6 +14,6 @@ spec:
     spec:
       containers:
       - name: classifier-container
-        image: <TU_USUARIO_DOCKER>/image-classifier:v1
+        image: davids117s/image-classifier:v1
         ports:
         - containerPort: 80
