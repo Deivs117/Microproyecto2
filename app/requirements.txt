@@ -1,0 +1,5 @@
+flask
+mxnet
+gluoncv
+Pillow
+numpy
