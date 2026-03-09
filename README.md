@@ -80,4 +80,105 @@ Verificación de Salud
 
 kubectl get nodes
 ```
+
 Resultado esperado: 2 nodos en estado 'Ready'.
+
+---
+
+## Punto 2: Clasificador de Imágenes con ResNet20
+
+Este documento detalla los pasos para desplegar un modelo de Deep Learning en **Azure Kubernetes Service (AKS)**.
+
+### 1. Configuración de Archivos de Manifiesto
+
+Ejecuta estos comandos en la terminal de Azure Cloud Shell para generar automáticamente los archivos de configuración necesarios:
+
+#### A. Crear Manifiesto de Despliegue (`deployment.yaml`)
+
+Este archivo define 2 réplicas del contenedor de IA para asegurar alta disponibilidad.
+
+```bash
+cat <<EOF > deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubermatic-dl-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: image-classifier
+  template:
+    metadata:
+      labels:
+        app: image-classifier
+    spec:
+      containers:
+      - name: classifier-container
+        image: davids117/image-classifier:v1
+        ports:
+        - containerPort: 80
+EOF
+
+```
+
+#### B. Crear Manifiesto de Servicio (`service.yaml`)
+
+Este archivo expone la aplicación a internet mediante una IP pública de Azure.
+
+```bash
+cat <<EOF > service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: image-classifier-service
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: image-classifier
+EOF
+
+```
+
+---
+
+### 2. Comandos de Despliegue
+
+Una vez creados los archivos anteriores, sigue este orden:
+
+```bash
+# 1. Vincular la terminal con el clúster de Azure
+az aks get-credentials --resource-group RG_Microproyecto2 --name ClusterIA
+
+# 2. Aplicar los manifiestos en el clúster
+kubectl apply -f deployment.yaml
+kubectl apply -f service.yaml
+
+# 3. Monitorear hasta obtener la IP Pública (EXTERNAL-IP)
+kubectl get service image-classifier-service --watch
+
+```
+
+---
+
+### 3. Prueba de la Aplicación (Client-Side)
+
+Desde la terminal local (donde se encuentre la carpeta de imágenes), ejecutar:
+
+```bash
+# Reemplazar <IP_AZURE> con el valor obtenido en el paso anterior
+curl -X POST -F "img=@assets/horse.jpg" http://<IP_AZURE>/predict
+
+```
+
+---
+
+### 4. Notas Técnicas para Sustentación
+
+* **Corrección de Imagen:** Se utiliza el repositorio `davids117/image-classifier:v1`.
+* **Ajuste de Código:** Se configuró `pretrained=True` para que el contenedor descargue los pesos del modelo automáticamente al iniciar.
+* **Infraestructura:** El clúster corre en 2 nodos `Standard_D2s_v3` en la región `centralus`.
+
