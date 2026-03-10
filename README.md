@@ -66,6 +66,8 @@ az aks create \
     --generate-ssh-keys
 ```
 
+
+
 Configuración de Acceso
 Comandos para vincular la terminal local/Cloud Shell con el clúster:
 
@@ -170,7 +172,7 @@ Desde la terminal local (donde se encuentre la carpeta de imágenes), ejecutar:
 
 ```bash
 # Reemplazar <IP_AZURE> con el valor obtenido en el paso anterior
-curl -X POST -F "img=@assets/horse.jpg" http://<IP_AZURE>/predict
+curl.exe -X POST -F "img=@assets/horse.jpg" http://<IP_AZURE>/predict
 
 ```
 
@@ -182,3 +184,68 @@ curl -X POST -F "img=@assets/horse.jpg" http://<IP_AZURE>/predict
 * **Ajuste de Código:** Se configuró `pretrained=True` para que el contenedor descargue los pesos del modelo automáticamente al iniciar.
 * **Infraestructura:** El clúster corre en 2 nodos `Standard_D2s_v3` en la región `centralus`.
 
+---
+
+# Punto 4: Monitoreo y Observabilidad del Clúster
+
+Este apartado documenta la configuración necesaria para habilitar la recolección de métricas de rendimiento (CPU y Memoria) tanto de los nodos físicos como de los Pods que ejecutan el modelo de Deep Learning.
+
+## 1. Registro de Proveedores de Recursos (Resource Providers)
+
+Antes de habilitar el monitoreo en AKS, es obligatorio registrar los siguientes espacios de nombres en la suscripción de Azure. Sin estos registros, el clúster no puede comunicarse con los servicios de telemetría.
+
+Ejecutar en la terminal de Azure:
+
+```bash
+# Habilita el motor de métricas de Azure Monitor
+az provider register --namespace microsoft.insights
+
+# Habilita el almacenamiento de logs y análisis operacional
+az provider register --namespace Microsoft.OperationalInsights
+
+```
+
+> **Nota:** Se debe verificar que el estado sea `Registered` usando el comando:
+> `az provider show -n microsoft.insights --query registrationState`
+
+## 2. Despliegue del Clúster con Soporte de Monitoreo
+
+Para habilitar el servidor de métricas de forma nativa, se debe incluir el addon de `monitoring` durante la creación del clúster. Esto instala automáticamente el agente de Log Analytics en los nodos.
+
+```bash
+az aks create \
+    --resource-group RG_Microproyecto2 \
+    --name ClusterIA \
+    --location centralus \
+    --node-count 2 \
+    --node-vm-size Standard_D2s_v3 \
+    --enable-addons monitoring \
+    --generate-ssh-keys
+
+```
+
+## 3. Comandos de Verificación de Telemetría
+
+Una vez desplegada la aplicación del Punto 2, se utilizan los siguientes comandos para monitorear el consumo de hardware. Estos datos son críticos para entender el impacto del modelo **ResNet20** en la infraestructura.
+
+### A. Consumo de Nodos (Infraestructura)
+
+Permite visualizar el porcentaje de carga de las máquinas virtuales `Standard_D2s_v3`.
+
+```bash
+kubectl top nodes
+
+```
+
+### B. Consumo de Pods (Aplicación de IA)
+
+Permite observar cuántos milicores de CPU y cuántos Megabytes de RAM consume cada réplica del clasificador de imágenes en tiempo real.
+
+```bash
+kubectl top pods
+
+```
+
+## 4. Arquitectura de Observabilidad
+
+La habilitación de estos registros permite que los datos fluyan desde el contenedor de Docker (en el nodo de AKS) hacia **Azure Monitor Container Insights**, permitiendo una supervisión detallada sin necesidad de instalar agentes adicionales manualmente dentro de la imagen.
