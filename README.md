@@ -186,6 +186,149 @@ curl.exe -X POST -F "img=@assets/horse.jpg" http://<IP_AZURE>/predict
 
 ---
 
+Aquí tienes la documentación técnica lista para integrar en tu archivo **README.md**. Este bloque cubre desde la creación de la infraestructura hasta la validación de las métricas de tu servicio de detección de imágenes (AI vs Real).
+
+---
+
+# Punto 3: Despliegue de Aplicación Propia y Monitoreo
+
+Este apartado detalla el proceso para levantar la infraestructura en Azure, configurar la seguridad para modelos de **Hugging Face** y desplegar un servicio de inferencia basado en **gRPC**.
+
+## 1. Configuración de la Infraestructura Base
+
+Antes de realizar el despliegue, es necesario recrear el entorno de ejecución en Azure. El clúster se configura con el complemento de monitoreo activado para habilitar las métricas en tiempo real.
+
+```bash
+# 1. Crear el Grupo de Recursos
+az group create --name RG_Microproyecto2 --location centralus
+
+# 2. Crear el clúster AKS con monitoreo habilitado
+az aks create \
+    --resource-group RG_Microproyecto2 \
+    --name ClusterIA \
+    --location centralus \
+    --node-count 2 \
+    --node-vm-size Standard_D2s_v3 \
+    --enable-addons monitoring \
+    --generate-ssh-keys
+
+# 3. Vincular credenciales a la terminal
+az aks get-credentials --resource-group RG_Microproyecto2 --name ClusterIA
+
+```
+
+---
+
+## 2. Gestión de Secretos y Seguridad
+
+Para que el contenedor pueda descargar el modelo `Ateeqq/ai-vs-human-image-detector` de forma eficiente y autenticada, se debe crear un secreto de Kubernetes con el token de Hugging Face.
+
+```bash
+# Crear secreto para autenticación en Hugging Face Hub
+# Reemplazar 'tu_token_aqui' con un token con permisos de lectura (Read)
+kubectl create secret generic hf-token --from-literal=HF_TOKEN='tu_token_aqui'
+
+```
+
+---
+
+## 3. Despliegue del Servicio de Inferencia (IA vs Real)
+
+El siguiente bloque genera el manifiesto de Kubernetes y lo aplica al clúster. Se utiliza un servicio tipo **LoadBalancer** para exponer el puerto gRPC (**50051**) a internet.
+
+```bash
+cat <<EOF > inferenceAIimage.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inference-ai-deployment
+  labels:
+    app: inference-ai
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: inference-ai
+  template:
+    metadata:
+      labels:
+        app: inference-ai
+    spec:
+      containers:
+        - name: inference-ai-container
+          image: davids117/aiimagerecognition:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 50051
+              name: grpc
+              protocol: TCP
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: HF_TOKEN
+            - name: HUGGINGFACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: HF_TOKEN
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
+          readinessProbe:
+            tcpSocket:
+              port: 50051
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 50051
+            initialDelaySeconds: 30
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inference-ai-service
+  labels:
+    app: inference-ai
+spec:
+  type: LoadBalancer
+  selector:
+    app: inference-ai
+  ports:
+    - name: grpc
+      port: 50051
+      targetPort: 50051
+      protocol: TCP
+EOF
+
+# Aplicar los manifiestos
+kubectl apply -f inferenceAIimage.yaml
+
+```
+
+---
+
+## 4. Verificación y Monitoreo (Punto 4)
+
+Una vez desplegada la aplicación, se debe validar que los Pods alcancen el estado `Ready` (esto puede tardar unos minutos debido a la descarga del modelo) y obtener la IP pública para la GUI.
+
+### Comandos de Inspección
+
+* **Estado de los Pods:** `kubectl get pods -w`
+* **Obtener IP Pública (gRPC):** `kubectl get svc inference-ai-service`
+* **Consumo de Recursos:** `kubectl top pods`
+
+> **Nota Técnica:** El modelo utiliza aproximadamente **1.2 GB** de RAM en estado de reposo tras la carga inicial de los pesos. Se recomienda monitorear que el consumo no exceda el límite de **2Gi** durante las pruebas de inferencia.
+
+---
+
 # Punto 4: Monitoreo y Observabilidad del Clúster
 
 Este apartado documenta la configuración necesaria para habilitar la recolección de métricas de rendimiento (CPU y Memoria) tanto de los nodos físicos como de los Pods que ejecutan el modelo de Deep Learning.
